@@ -17,8 +17,8 @@ export interface TicketResponse {
   description: string;
   status: TicketStatus;
   priority: TicketPriority;
-  assignedTo?: string;
-  createdBy: string;
+  assignedTo?: UserResponse; // Changed to UserResponse type
+  createdBy: UserResponse;   // Changed to UserResponse type
   createdAt: Date;
   updatedAt: Date;
   tags: string[];
