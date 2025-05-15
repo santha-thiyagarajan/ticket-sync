@@ -1,28 +1,50 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Ticket } from '../../types/ticket';
-import { getUserById } from '../../data/mockData';
 import TicketStatusBadge from './TicketStatusBadge';
 import TicketPriorityBadge from './TicketPriorityBadge';
-import { useTickets } from '../../context/TicketContext';
 import { format } from 'date-fns';
-import { Clock, Calendar, User, Tag, Edit, Trash, ChevronLeft } from 'lucide-react';
+import { Clock, Calendar, Tag, Edit, Trash, ChevronLeft, AlertCircle } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 interface TicketDetailProps {
   ticket: Ticket;
 }
 
 const TicketDetail: React.FC<TicketDetailProps> = ({ ticket }) => {
-  const { deleteTicket } = useTickets();
   const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const assignee = ticket.assignedTo ? getUserById(ticket.assignedTo) : null;
-  const creator = getUserById(ticket.createdBy);
+  const assignee = ticket.assignee;
+  const creator = ticket.creator;
 
-  const handleDelete = () => {
-    deleteTicket(ticket.id);
-    navigate('/');
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
+      
+      const response = await fetch(getApiUrl(`/tickets/${ticket.id}`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to delete ticket: ${response.status}`);
+      }
+      
+      setShowDeleteConfirm(false);
+      navigate('/tickets');
+    } catch (error) {
+      console.error('Error deleting ticket:', error);
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete the ticket');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -30,7 +52,7 @@ const TicketDetail: React.FC<TicketDetailProps> = ({ ticket }) => {
       <div className="border-b border-gray-200 px-4 py-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between space-y-3 sm:space-y-0">
         <div>
           <Link 
-            to="/" 
+            to="/tickets" 
             className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 mb-2"
           >
             <ChevronLeft size={16} className="mr-1" />
@@ -67,18 +89,48 @@ const TicketDetail: React.FC<TicketDetailProps> = ({ ticket }) => {
             <p className="mt-2 text-sm text-gray-500">
               Are you sure you want to delete this ticket? This action cannot be undone.
             </p>
+            
+            {deleteError && (
+              <div className="mt-3 bg-red-50 border-l-4 border-red-400 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-red-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-red-700">{deleteError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="mt-4 flex justify-end space-x-3">
               <button
+                type="button"
+                disabled={isDeleting}
                 onClick={() => setShowDeleteConfirm(false)}
                 className="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 Cancel
               </button>
               <button
+                type="button"
+                disabled={isDeleting}
                 onClick={handleDelete}
-                className="inline-flex justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                className={`inline-flex justify-center rounded-md border border-transparent ${
+                  isDeleting ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'
+                } px-4 py-2 text-sm font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2`}
               >
-                Delete
+                {isDeleting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
               </button>
             </div>
           </div>

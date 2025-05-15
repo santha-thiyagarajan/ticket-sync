@@ -1,17 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Ticket, TicketPriority, TicketStatus } from '../../types/ticket';
-import { useTickets } from '../../context/TicketContext';
-import { users } from '../../data/mockData';
+import { Ticket, TicketPriority, TicketStatus, User } from '../../types/ticket';
+import { getApiUrl } from '../../config/api';
+import { useUsers } from '../../hooks/useUsers';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { Loader } from 'lucide-react';
 
 interface TicketFormProps {
   ticket?: Ticket; // For editing existing ticket
   isEditing?: boolean;
+  showCreatedBy?: boolean;
 }
 
-const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) => {
-  const { createTicket, updateTicket } = useTickets();
+interface CreateTicketPayload {
+  title: string;
+  description: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  assignedTo?: string;
+  createdBy: string; // Required for new tickets
+  tags: string[];
+}
+
+interface UpdateTicketPayload {
+  title?: string;
+  description?: string;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  assignedTo?: string;
+  tags?: string[];
+}
+
+const TicketForm: React.FC<TicketFormProps> = ({ 
+  ticket, 
+  isEditing = false,
+  showCreatedBy = false
+}) => {
   const navigate = useNavigate();
+  const { users, loading: loadingUsers, error: usersError } = useUsers();
+  const { currentUser, loading: loadingCurrentUser, error: currentUserError } = useCurrentUser();
+
+  const [creatorUser, setCreatorUser] = useState<User | null>(null);
+  const [loadingCreator, setLoadingCreator] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -21,7 +51,8 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
     assignedTo: '',
     tags: [] as string[],
   });
-
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -38,6 +69,33 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
       });
     }
   }, [isEditing, ticket]);
+
+  // Fetch creator user data if showing createdBy field
+  useEffect(() => {
+    if (showCreatedBy && isEditing && ticket && ticket.createdBy && !ticket.creator) {
+      const fetchCreator = async () => {
+        try {
+          setLoadingCreator(true);
+          const response = await fetch(getApiUrl(`/users/${ticket.createdBy}`));
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch creator user');
+          }
+          
+          const userData: User = await response.json();
+          setCreatorUser(userData);
+        } catch (err) {
+          console.error('Error fetching creator:', err);
+        } finally {
+          setLoadingCreator(false);
+        }
+      };
+      
+      fetchCreator();
+    } else if (ticket?.creator) {
+      setCreatorUser(ticket.creator);
+    }
+  }, [showCreatedBy, isEditing, ticket]);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -101,34 +159,105 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const createTicketAPI = async (payload: CreateTicketPayload): Promise<Ticket> => {
+    console.log('Creating ticket with payload:', payload);
+    const response = await fetch(getApiUrl('/tickets'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || `Failed to create ticket: ${response.status}`
+      );
+    }
+
+    return response.json();
+  };
+
+  const updateTicketAPI = async (id: string, payload: UpdateTicketPayload): Promise<Ticket> => {
+    console.log('Updating ticket with payload:', payload);
+    const response = await fetch(getApiUrl(`/tickets/${id}`), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || `Failed to update ticket: ${response.status}`
+      );
+    }
+
+    return response.json();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
     }
     
+    if (!currentUser) {
+      setErrors((prev) => ({ ...prev, form: 'Current user information is not available' }));
+      return;
+    }
+    
     try {
-      // Current user info would come from auth in a real app
-      const currentUser = users[0];
+      setIsSubmitting(true);
       
       if (isEditing && ticket) {
-        updateTicket(ticket.id, {
-          ...formData,
-          // Don't include these properties in update
-          createdBy: undefined,
-        });
-        navigate(`/tickets/${ticket.id}`);
+        // For updating an existing ticket
+        const updatePayload: UpdateTicketPayload = {
+          title: formData.title,
+          description: formData.description,
+          status: formData.status,
+          priority: formData.priority,
+          tags: formData.tags,
+        };
+        
+        // Only add assignedTo if not empty
+        if (formData.assignedTo) {
+          updatePayload.assignedTo = formData.assignedTo;
+        }
+        
+        const savedTicket = await updateTicketAPI(ticket.id, updatePayload);
+        navigate(`/tickets/${savedTicket.id}`);
       } else {
-        const newTicket = createTicket({
-          ...formData,
-          createdBy: currentUser.id,
-        });
-        navigate(`/tickets/${newTicket.id}`);
+        // For creating a new ticket
+        const createPayload: CreateTicketPayload = {
+          title: formData.title,
+          description: formData.description,
+          status: formData.status,
+          priority: formData.priority,
+          tags: formData.tags,
+          createdBy: currentUser.id,  // Always include the current user ID
+        };
+        
+        // Only add assignedTo if not empty
+        if (formData.assignedTo) {
+          createPayload.assignedTo = formData.assignedTo;
+        }
+        
+        const savedTicket = await createTicketAPI(createPayload);
+        navigate(`/tickets/${savedTicket.id}`);
       }
     } catch (error) {
       console.error('Error saving ticket:', error);
-      setErrors((prev) => ({ ...prev, form: 'Failed to save ticket' }));
+      setErrors((prev) => ({ 
+        ...prev, 
+        form: error instanceof Error ? error.message : 'Failed to save ticket' 
+      }));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -136,9 +265,32 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
     if (isEditing && ticket) {
       navigate(`/tickets/${ticket.id}`);
     } else {
-      navigate('/');
+      navigate('/tickets');
     }
   };
+
+  if (loadingUsers || loadingCurrentUser) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="h-6 w-6 text-blue-500 animate-spin" />
+        <span className="ml-2 text-gray-600">Loading form...</span>
+      </div>
+    );
+  }
+
+  if (usersError || currentUserError) {
+    return (
+      <div className="bg-red-50 border-l-4 border-red-500 p-4">
+        <div className="flex">
+          <div>
+            <p className="text-sm text-red-700">
+              {usersError || currentUserError || 'Failed to load required data. Please try again later.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -233,6 +385,39 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
         </div>
       </div>
 
+      {showCreatedBy && isEditing && ticket && (
+        <div>
+          <label htmlFor="createdBy" className="block text-sm font-medium text-gray-700">
+            Created By
+          </label>
+          <div className="mt-1 flex items-center">
+            {loadingCreator ? (
+              <div className="flex items-center text-sm text-gray-500">
+                <Loader className="h-4 w-4 text-blue-500 animate-spin mr-2" />
+                Loading creator...
+              </div>
+            ) : creatorUser ? (
+              <div className="flex items-center">
+                {creatorUser.avatar && (
+                  <img
+                    src={creatorUser.avatar}
+                    alt={creatorUser.name}
+                    className="h-8 w-8 rounded-full mr-2"
+                  />
+                )}
+                <span className="text-sm text-gray-700">{creatorUser.name}</span>
+                <span className="ml-2 text-xs text-gray-500">({creatorUser.email})</span>
+              </div>
+            ) : (
+              <span className="text-sm text-gray-500">
+                {ticket.createdBy || 'Unknown'}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">This field cannot be modified</p>
+        </div>
+      )}
+
       <div>
         <label htmlFor="assignedTo" className="block text-sm font-medium text-gray-700">
           Assigned To
@@ -299,9 +484,22 @@ const TicketForm: React.FC<TicketFormProps> = ({ ticket, isEditing = false }) =>
         </button>
         <button
           type="submit"
-          className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          disabled={isSubmitting}
+          className={`inline-flex justify-center rounded-md border border-transparent ${
+            isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+          } py-2 px-4 text-sm font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
         >
-          {isEditing ? 'Update Ticket' : 'Create Ticket'}
+          {isSubmitting ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              {isEditing ? 'Updating...' : 'Creating...'}
+            </>
+          ) : (
+            isEditing ? 'Update Ticket' : 'Create Ticket'
+          )}
         </button>
       </div>
     </form>

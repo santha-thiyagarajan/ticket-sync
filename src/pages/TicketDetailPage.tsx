@@ -2,41 +2,47 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
 import TicketDetail from '../components/tickets/TicketDetail';
-import { useTickets } from '../context/TicketContext';
 import { Loader } from 'lucide-react';
+import { Ticket } from '../types/ticket';
+import { getApiUrl } from '../config/api';
 
 const TicketDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { getTicket } = useTickets();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [ticket, setTicket] = useState(null);
+  const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate loading delay
-    const timer = setTimeout(() => {
+    const fetchTicketDetails = async () => {
       try {
         if (!id) {
           throw new Error('Ticket ID is required');
         }
         
-        const foundTicket = getTicket(id);
+        setLoading(true);
+        const response = await fetch(getApiUrl(`/tickets/${id}`));
         
-        if (!foundTicket) {
-          throw new Error(`Ticket with ID ${id} not found`);
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error(`Ticket with ID ${id} not found`);
+          }
+          throw new Error(`Error fetching ticket: ${response.statusText}`);
         }
         
-        setTicket(foundTicket);
-        setLoading(false);
+        const ticketData: Ticket = await response.json();
+        setTicket(ticketData);
+        setError(null);
       } catch (err) {
+        console.error('Error fetching ticket details:', err);
         setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
         setLoading(false);
       }
-    }, 300);
+    };
     
-    return () => clearTimeout(timer);
-  }, [id, getTicket]);
+    fetchTicketDetails();
+  }, [id]);
 
   if (loading) {
     return (
@@ -76,10 +82,10 @@ const TicketDetailPage: React.FC = () => {
               <div className="mt-4">
                 <div className="-mx-2 -my-1.5 flex">
                   <button
-                    onClick={() => navigate('/')}
+                    onClick={() => navigate('/tickets')}
                     className="bg-red-50 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                   >
-                    Return to dashboard
+                    Return to tickets
                   </button>
                 </div>
               </div>

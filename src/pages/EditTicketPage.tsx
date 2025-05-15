@@ -2,42 +2,47 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
 import TicketForm from '../components/tickets/TicketForm';
-import { useTickets } from '../context/TicketContext';
 import { Ticket } from '../types/ticket';
 import { Loader } from 'lucide-react';
+import { getApiUrl } from '../config/api';
 
 const EditTicketPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { getTicket } = useTickets();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate loading delay
-    const timer = setTimeout(() => {
+    const fetchTicket = async () => {
       try {
         if (!id) {
           throw new Error('Ticket ID is required');
         }
         
-        const foundTicket = getTicket(id);
+        setLoading(true);
+        const response = await fetch(getApiUrl(`/tickets/${id}`));
         
-        if (!foundTicket) {
-          throw new Error(`Ticket with ID ${id} not found`);
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error(`Ticket with ID ${id} not found`);
+          }
+          throw new Error(`Error fetching ticket: ${response.statusText}`);
         }
         
-        setTicket(foundTicket);
-        setLoading(false);
+        const ticketData: Ticket = await response.json();
+        setTicket(ticketData);
+        setError(null);
       } catch (err) {
+        console.error('Error fetching ticket:', err);
         setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
         setLoading(false);
       }
-    }, 300);
+    };
     
-    return () => clearTimeout(timer);
-  }, [id, getTicket]);
+    fetchTicket();
+  }, [id]);
 
   if (loading) {
     return (
@@ -77,10 +82,10 @@ const EditTicketPage: React.FC = () => {
               <div className="mt-4">
                 <div className="-mx-2 -my-1.5 flex">
                   <button
-                    onClick={() => navigate('/')}
+                    onClick={() => navigate('/tickets')}
                     className="bg-red-50 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                   >
-                    Return to dashboard
+                    Return to tickets
                   </button>
                 </div>
               </div>
@@ -97,7 +102,7 @@ const EditTicketPage: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit Ticket: {ticket.id}</h1>
         <div className="bg-white shadow rounded-lg overflow-hidden">
           <div className="p-6">
-            <TicketForm ticket={ticket} isEditing />
+            <TicketForm ticket={ticket} isEditing={true} showCreatedBy={true} />
           </div>
         </div>
       </div>

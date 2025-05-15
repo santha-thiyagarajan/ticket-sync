@@ -1,23 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Ticket } from '../../types/ticket';
-import { getUserById } from '../../data/mockData';
 import TicketStatusBadge from './TicketStatusBadge';
 import TicketPriorityBadge from './TicketPriorityBadge';
 import { formatDistanceToNow } from 'date-fns';
-import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
+import { Filter, ChevronDown, ChevronUp, Loader } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
-interface TicketListProps {
-  tickets: Ticket[];
-}
+interface TicketListProps {}
 
 type SortField = 'id' | 'title' | 'status' | 'priority' | 'assignedTo' | 'updatedAt';
 type SortDirection = 'asc' | 'desc';
 
-const TicketList: React.FC<TicketListProps> = ({ tickets }) => {
+interface ApiResponse {
+  data: Ticket[];
+  meta: {
+    totalCount: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+const TicketList: React.FC<TicketListProps> = () => {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('updatedAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(getApiUrl('/tickets'));
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const data: ApiResponse = await response.json();
+        setTickets(data.data);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching tickets:', err);
+        setError('Failed to load tickets. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -67,6 +102,24 @@ const TicketList: React.FC<TicketListProps> = ({ tickets }) => {
     }
     return null;
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader className="animate-spin h-8 w-8 text-blue-500" />
+        <span className="ml-2 text-gray-600">Loading tickets...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+        <strong className="font-bold">Error:</strong>
+        <span className="block sm:inline"> {error}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -151,8 +204,6 @@ const TicketList: React.FC<TicketListProps> = ({ tickets }) => {
           <tbody className="bg-white divide-y divide-gray-200">
             {sortedTickets.length > 0 ? (
               sortedTickets.map((ticket) => {
-                const assignee = ticket.assignedTo ? getUserById(ticket.assignedTo) : null;
-                
                 return (
                   <tr 
                     key={ticket.id} 
@@ -175,16 +226,16 @@ const TicketList: React.FC<TicketListProps> = ({ tickets }) => {
                       <TicketPriorityBadge priority={ticket.priority} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {assignee ? (
+                      {ticket.assignee ? (
                         <div className="flex items-center">
-                          {assignee.avatar && (
+                          {ticket.assignee.avatar && (
                             <img
-                              src={assignee.avatar}
-                              alt={assignee.name}
+                              src={ticket.assignee.avatar}
+                              alt={ticket.assignee.name}
                               className="h-6 w-6 rounded-full mr-2"
                             />
                           )}
-                          <span>{assignee.name}</span>
+                          <span>{ticket.assignee.name}</span>
                         </div>
                       ) : (
                         <span className="text-gray-400">Unassigned</span>
