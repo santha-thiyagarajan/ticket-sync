@@ -1,58 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Ticket } from '../../types/ticket';
 import TicketStatusBadge from './TicketStatusBadge';
 import TicketPriorityBadge from './TicketPriorityBadge';
 import { formatDistanceToNow } from 'date-fns';
-import { Filter, ChevronDown, ChevronUp, Loader } from 'lucide-react';
-import { getApiUrl } from '../../config/api';
+import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
 
-interface TicketListProps {}
+interface TicketListProps {
+  tickets: Ticket[];
+  isLoading?: boolean;
+  error?: string | null;
+}
 
 type SortField = 'id' | 'title' | 'status' | 'priority' | 'assignedTo' | 'updatedAt';
 type SortDirection = 'asc' | 'desc';
 
-interface ApiResponse {
-  data: Ticket[];
-  meta: {
-    totalCount: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-}
-
-const TicketList: React.FC<TicketListProps> = () => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const TicketList: React.FC<TicketListProps> = ({ tickets, isLoading = false, error = null }) => {
   const [sortField, setSortField] = useState<SortField>('updatedAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-
-  useEffect(() => {
-    const fetchTickets = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(getApiUrl('/tickets'));
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        
-        const data: ApiResponse = await response.json();
-        setTickets(data.data);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching tickets:', err);
-        setError('Failed to load tickets. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTickets();
-  }, []);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -103,10 +69,10 @@ const TicketList: React.FC<TicketListProps> = () => {
     return null;
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <Loader className="animate-spin h-8 w-8 text-blue-500" />
+        <div className="animate-spin h-8 w-8 text-blue-500 border-4 border-blue-200 rounded-full border-t-blue-500"></div>
         <span className="ml-2 text-gray-600">Loading tickets...</span>
       </div>
     );

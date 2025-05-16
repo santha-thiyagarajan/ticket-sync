@@ -1,18 +1,85 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
 import TicketList from '../components/tickets/TicketList';
-import { useTickets } from '../context/TicketContext';
-import { PlusCircle } from 'lucide-react';
+import { Ticket } from '../types/ticket';
+import { PlusCircle, Loader } from 'lucide-react';
+import { getApiUrl } from '../config/api';
+
+interface ApiResponse {
+  data: Ticket[];
+  meta: {
+    totalCount: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    openCount: number;
+    inProgressCount: number;
+    resolvedCount: number;
+  };
+}
+
+interface TicketCounts {
+  total: number;
+  open: number;
+  inProgress: number;
+  resolved: number;
+}
 
 const HomePage: React.FC = () => {
-  const { tickets } = useTickets();
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [ticketCounts, setTicketCounts] = useState<TicketCounts>({
+    total: 0,
+    open: 0,
+    inProgress: 0,
+    resolved: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  // Count tickets by status
-  const statusCounts = tickets.reduce((acc, ticket) => {
-    acc[ticket.status] = (acc[ticket.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(getApiUrl('/tickets'));
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const data: ApiResponse = await response.json();
+        setTickets(data.data);
+        
+        // Set counts from meta data
+        setTicketCounts({
+          total: data.meta.totalCount,
+          open: data.meta.openCount,
+          inProgress: data.meta.inProgressCount,
+          resolved: data.meta.resolvedCount
+        });
+        
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching tickets:', err);
+        setError('Failed to load tickets. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
+  
+  if (loading && tickets.length === 0) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center h-64">
+          <Loader className="animate-spin h-8 w-8 text-blue-500" />
+          <span className="ml-2 text-gray-600">Loading dashboard...</span>
+        </div>
+      </Layout>
+    );
+  }
   
   return (
     <Layout>
@@ -53,7 +120,7 @@ const HomePage: React.FC = () => {
                   </dt>
                   <dd className="flex items-baseline">
                     <div className="text-2xl font-semibold text-gray-900">
-                      {tickets.length}
+                      {ticketCounts.total}
                     </div>
                   </dd>
                 </dl>
@@ -87,7 +154,7 @@ const HomePage: React.FC = () => {
                   </dt>
                   <dd className="flex items-baseline">
                     <div className="text-2xl font-semibold text-gray-900">
-                      {statusCounts['in_progress'] || 0}
+                      {ticketCounts.inProgress}
                     </div>
                   </dd>
                 </dl>
@@ -121,7 +188,7 @@ const HomePage: React.FC = () => {
                   </dt>
                   <dd className="flex items-baseline">
                     <div className="text-2xl font-semibold text-gray-900">
-                      {statusCounts['open'] || 0}
+                      {ticketCounts.open}
                     </div>
                   </dd>
                 </dl>
@@ -155,7 +222,7 @@ const HomePage: React.FC = () => {
                   </dt>
                   <dd className="flex items-baseline">
                     <div className="text-2xl font-semibold text-gray-900">
-                      {(statusCounts['resolved'] || 0) + (statusCounts['closed'] || 0)}
+                      {ticketCounts.resolved}
                     </div>
                   </dd>
                 </dl>
@@ -165,7 +232,11 @@ const HomePage: React.FC = () => {
         </div>
       </div>
       
-      <TicketList tickets={tickets} />
+      <TicketList 
+        tickets={tickets} 
+        isLoading={loading && tickets.length === 0} 
+        error={error} 
+      />
     </Layout>
   );
 };

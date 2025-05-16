@@ -3,7 +3,7 @@ import { User } from '../types/ticket';
 import { getApiUrl } from '../config/api';
 
 // Since we don't have authentication, we're using a fixed user ID
-const CURRENT_USER_ID = '3f6c8476-d2fd-477d-a7dc-14d052bd95e7';
+const CURRENT_USER_ID = '66411020-5575-4bd9-946c-37a107373a85';
 
 export function useCurrentUser() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
